@@ -55,3 +55,6 @@ bean_encoder_test.csv
 venv/
 coverage_reports/
 
+# pixi environments
+.pixi/*
+!.pixi/config.toml

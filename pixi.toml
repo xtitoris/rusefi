@@ -1,11 +1,80 @@
-[project]
+[workspace]
 name = "rusefi"
 # https://github.com/xtitoris/xtitoris-forge
 channels = ["conda-forge", "xtitoris"]
 platforms = ["win-64", "linux-64", "osx-arm64"]
 
+# To install only some dependencies globally, use the following command:
 # pixi global install arm-gnu-toolchain=14.2.rel1 --channel xtitoris
 # pixi global install arm-gnu-toolchain --channel xtitoris
+
 [dependencies]
 make = ">=4.4.1,<5"
-arm-gnu-toolchain = ">=14,<15"
+cmake = ">=3.31.2,<4"
+ninja = ">=1.12.1,<2"
+arm-gnu-toolchain = "==14.2.rel1"
+openjdk = ">=17,<18"
+gradle = ">=9.3.1,<10"
+# extra tooling, common across all platforms
+dosfstools = ">=4.2,<5"
+mtools = ">=4.0.49,<5"
+vim = ">=9.2.397,<10"
+bc = ">=1.7.1,<2"
+hex2dfu = ">=0.21.0,<0.22"
+
+[target.win-64.dependencies]
+gcc = ">=14.3.0,<14.4"
+gxx = ">=14.3.0,<14.4"
+# extra tooling
+7zip = "*"
+m2-bash = "*"
+m2-coreutils = "*"
+m2-findutils = "*"
+m2-util-linux = "*"
+m2-gzip = "*"
+m2-grep = "*"
+m2-sed = "*"
+m2-gawk = "*"
+m2-zip = "*"
+
+[target.linux-64.dependencies]
+gcc = ">=14.3.0,<14.4"
+gxx = ">=14.3.0,<14.4"
+gdb = ">=16.2,<17"
+# extra tooling
+zip = ">=3.0,<4"
+binutils = ">=2.43,<3"
+valgrind = ">=3.24.0,<4"
+p7zip = ">=16.2,<17" # 7zip currently has a non-working version on conda-forge
+# optional dependencies to sort out later
+# sshpass = ">=1.6,<2"
+# colordiff = ">=1.0.22,<2"
+
+[target.osx-arm64.dependencies]
+# not tested yet
+clang = ">=20,<21"
+clangxx = ">=20,<21"
+gdb = ">=16.2,<17"
+# extra tooling
+zip = ">=3.0,<4"
+7zip = "*"
+
+
+[tasks]
+submodules = "git submodule update --init"
+
+java-build = "bash -c './gradlew build'"
+java-build-all = "bash -c './gradlew jar :config_definition_base:shadowJar :enum_to_string:shadowJar :trigger-ui:shadowJar'"
+java-test = "bash -c './gradlew test'"
+
+console-build = "bash -c './gradlew :ui:shadowJar'"
+console = { cmd = "java -jar console/rusefi_console.jar", depends-on = ["console-build"] }
+
+[target.win-64.tasks]
+fw-config = "make -C firmware -j1"
+fw-build = "make -C firmware -j12"
+ut-build = "make -C unit_tests -j1; make -C unit_tests -j12"
+sim-build = "make -C simulator -j1; make -C simulator -j12"
+java-build = ".\\gradlew.bat jar :config_definition_base:shadowJar :enum_to_string:shadowJar :trigger-ui:shadowJar"
+java-test = ".\\gradlew.bat test"
+console-build = ".\\gradlew.bat :ui:shadowJar"
