@@ -8,6 +8,10 @@ platforms = ["win-64", "linux-64", "osx-arm64"]
 # pixi global install arm-gnu-toolchain=14.2.rel1 --channel xtitoris
 # pixi global install arm-gnu-toolchain --channel xtitoris
 
+[environments]
+notebooks = ["notebooks"]
+
+
 [dependencies]
 make = ">=4.4.1,<5"
 cmake = ">=3.31.2,<4"
@@ -36,6 +40,7 @@ m2-grep = "*"
 m2-sed = "*"
 m2-gawk = "*"
 m2-zip = "*"
+i686-w64-mingw32-gcc = ">=15.2.0,<16"
 
 [target.linux-64.dependencies]
 gcc = ">=14.3.0,<14.4"
@@ -70,11 +75,10 @@ java-test = "bash -c './gradlew test'"
 console-build = "bash -c './gradlew :ui:shadowJar'"
 console = { cmd = "java -jar console/rusefi_console.jar", depends-on = ["console-build"] }
 
-[target.win-64.tasks]
-fw-config = "make -C firmware -j1"
-fw-build = "make -C firmware -j12"
-ut-build = "make -C unit_tests -j1; make -C unit_tests -j12"
-sim-build = "make -C simulator -j1; make -C simulator -j12"
-java-build = ".\\gradlew.bat jar :config_definition_base:shadowJar :enum_to_string:shadowJar :trigger-ui:shadowJar"
-java-test = ".\\gradlew.bat test"
-console-build = ".\\gradlew.bat :ui:shadowJar"
+[feature.notebooks.dependencies]
+ipykernel = "*"
+pip = "*"
+pandas = ">=3.0.2,<4"
+matplotlib = ">=3.10.9,<4"
+plotly = ">=6.6.0,<7"
+nbformat = ">=5.10.4,<6"
