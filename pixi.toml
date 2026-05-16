@@ -8,10 +8,12 @@ platforms = ["win-64", "linux-64", "osx-arm64"]
 # pixi global install arm-gnu-toolchain=14.2.rel1 --channel xtitoris
 # pixi global install arm-gnu-toolchain --channel xtitoris
 
+[target.win-64.activation]
+env = { USE_MINGW32_I686 = "1" }
+
 [dependencies]
 make = ">=4.4.1,<5"
 cmake = ">=3.31.2,<4"
-ninja = ">=1.12.1,<2"
 arm-gnu-toolchain = "==14.2.rel1"
 openjdk = ">=17,<18"
 gradle = ">=9.3.1,<10"
@@ -25,22 +27,26 @@ hex2dfu = ">=0.21.0,<0.22"
 [target.win-64.dependencies]
 gcc = ">=14.3.0,<14.4"
 gxx = ">=14.3.0,<14.4"
-# extra tooling
-7zip = "*"
+# system tools for consistency
 m2-bash = "*"
 m2-coreutils = "*"
 m2-findutils = "*"
 m2-util-linux = "*"
-m2-gzip = "*"
 m2-grep = "*"
 m2-sed = "*"
 m2-gawk = "*"
 m2-zip = "*"
+m2-gzip = "*"
+# extra tooling
+7zip = "*"
 
 [target.linux-64.dependencies]
 gcc = ">=14.3.0,<14.4"
 gxx = ">=14.3.0,<14.4"
 gdb = ">=16.2,<17"
+# system tools for consistency
+coreutils="*"
+util-linux = "*"
 # extra tooling
 zip = ">=3.0,<4"
 binutils = ">=2.43,<3"
@@ -52,9 +58,11 @@ p7zip = ">=16.2,<17" # 7zip currently has a non-working version on conda-forge
 
 [target.osx-arm64.dependencies]
 # not tested yet
-clang = ">=20,<21"
-clangxx = ">=20,<21"
-gdb = ">=16.2,<17"
+clang = ">=22,<23"
+clangxx = ">=22,<23"
+# system tools for consistency
+coreutils="*"
+util-linux = "*"
 # extra tooling
 zip = ">=3.0,<4"
 7zip = "*"
@@ -69,12 +77,3 @@ java-test = "bash -c './gradlew test'"
 
 console-build = "bash -c './gradlew :ui:shadowJar'"
 console = { cmd = "java -jar console/rusefi_console.jar", depends-on = ["console-build"] }
-
-[target.win-64.tasks]
-fw-config = "make -C firmware -j1"
-fw-build = "make -C firmware -j12"
-ut-build = "make -C unit_tests -j1; make -C unit_tests -j12"
-sim-build = "make -C simulator -j1; make -C simulator -j12"
-java-build = ".\\gradlew.bat jar :config_definition_base:shadowJar :enum_to_string:shadowJar :trigger-ui:shadowJar"
-java-test = ".\\gradlew.bat test"
-console-build = ".\\gradlew.bat :ui:shadowJar"
