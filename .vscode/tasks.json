@@ -226,6 +226,19 @@
 				"kind": "build",
 				"isDefault": true
 			}
-		}
+		},
+		{
+			"label": "Build Unit Tests (pixi)",
+			"type": "shell",
+			"command": "pixi run make -j12",
+			"options": {
+				"cwd": "${workspaceRoot}/unit_tests"
+			},
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
 	]
 }

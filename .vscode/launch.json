@@ -55,6 +55,16 @@
 			"preLaunchTask": "Build Unit Tests"
 		},
 		{
+			"name": "Debug Unit Tests (lldb @ pixi)",
+			"type": "lldb",
+			"request": "launch",
+			"program": "${workspaceFolder}/unit_tests/build/rusefi_test",
+			// uncomment args below to only debug a particular test
+			"args": ["--gtest_filter=realChryslerPhaser.phaser_cam_1"],
+			"cwd": "${workspaceFolder}/unit_tests/",
+			"preLaunchTask": "Build Unit Tests (pixi)"
+		},
+		{
 			"name": "Debug F40x",
 			"type": "cortex-debug",
 			"request": "launch",

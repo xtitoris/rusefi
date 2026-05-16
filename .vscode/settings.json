@@ -38,4 +38,19 @@
 	"Lua.diagnostics.disable": [
 		"lowercase-global"
 	],
+	"testMate.cpp.test.advancedExecutables": [
+		{
+			"pattern": "*/build/**/*{test,Test}",
+			"cwd": "${absDirpath}/../",
+			"runTask": { "before": ["Build Unit Tests (pixi)"] }
+		}
+    ],
+    "testMate.cpp.debug.configTemplate": {
+        "type": "lldb",
+        "request": "launch",
+        "name": "TestMate Debug Backend",
+        "program": "${exec}", 
+        "args": "${args}",
+        "cwd": "${absDirpath}/../"
+    }
 }
