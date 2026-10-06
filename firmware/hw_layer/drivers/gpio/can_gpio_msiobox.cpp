@@ -5,22 +5,30 @@
  * expander that provides additional discrete/PWM outputs, ADC inputs,
  * switch inputs and wheel-speed (VSS/tach) capture.
  *
- * The driver implements two roles at once:
- *  - GpioChip:    exposes the IOBox pins to the rest of the firmware as if
- *                 they were ordinary GPIOs (writePad/readPad/setPadPWM).
+ * The driver implements multiple roles at once:
+ *  - GpioChip:    exposes the IOBox's discrete/PWM outputs and switch inputs
+ *                 to the rest of the firmware as if they were ordinary GPIOs.
+ *  - AdcChip:     exposes the IOBox's analog inputs through the off-chip ADC
+ *                 backend, so they can be assigned to any sensor input like
+ *                 an onboard ADC pin.
  *  - CanListener: drives the CAN protocol state machine, sends commands to
  *                 the device and decodes the telemetry frames it broadcasts.
  *
  * Current status:
  *  - discrete output works
  *  - PWM output works
+ *  - switch input reading works
+ *  - ADC channels exposed via AdcChip::readAdc()
+ *  - VSS/tach-in enable mask wired from msIoBox0.vss
  *
  * see also iobox.yaml
  *
  * TODO list:
- *  - implement input reading
- *  - support PWM out mode
- *  - support VSS capture
+ *  - CAN bus index, device pin base and broadcast period are hardcoded in
+ *    initCanGpioMsiobox(), not configurable from the tune
+ *  - Tach[] is not exposed anywhere outside this driver
+ *  - Tach[]/AdcValue[] updates are not synchronized against readers
+ *  - PWM updates are not synchronized against writers
  */
 
 #include "pch.h"
@@ -29,6 +37,7 @@
 #if EFI_CAN_GPIO
 
 #include "gpio/gpio_ext.h"
+#include "adc_offchip.h"
 #include "can_listener.h"
 #include "can_msg_tx.h"
 #include <rusefi/endian.h>
@@ -63,6 +72,15 @@
 /* timeouts for different states */
 #define MSIOBOX_PING_TIMEOUT	100
 #define MSIOBOX_RESTART_TIMEOUT	1000
+#define MSIOBOX_TIMEOUT_PERIODS	3
+
+/* Off-chip ADC registration.
+ * The device has 7 real analog channels.*/
+#define MSIOBOX_ADC_BASE			EFI_ADC_40
+
+/* 10-bit ADC, 0-5V max input. */
+#define MSIOBOX_ADC_VREF		  5.0f
+#define MSIOBOX_ADC_COUNTS	  1024
 
 /*==========================================================================*/
 /* Driver exported variables.												*/
@@ -176,12 +194,15 @@ typedef enum {
 	MSIOBOX_FAILED // 4		// communication lost, waiting before retry
 } msiobox_state;
 
-class MsIoBox final : public GpioChip, public CanListener {
+class MsIoBox final : public GpioChip, public AdcChip, public CanListener {
 	/* gpio stuff */
 	int writePad(size_t pin, int value) override;
 	int readPad(size_t pin) override;
 	int setPadPWM(size_t pin, float frequency, float duty) override;
 	brain_pin_diag_e getDiag(size_t pin) override;
+
+	/* AdcChip stuff */
+	expected<AdcSample> readAdc(size_t channel) override;
 
 public:
 	MsIoBox();
@@ -190,6 +211,10 @@ public:
 	void printState() {
 	  efiPrintf("IO state: %d", (int)state);
 	  efiPrintf("pwmBaseFreq: %d", (int)pwmBaseFreq);
+	  efiPrintf("InVal: %#x InMode: %#x", InVal, InMode);
+	  for (size_t i = 0; i < MSIOBOX_ADC_IN_COUNT; i++) {
+		  efiPrintf("ADC%d: raw=%d %.3fV", (int)i + 1, AdcValue[i], AdcValue[i] * MSIOBOX_ADC_VREF / MSIOBOX_ADC_COUNTS);
+	  }
 	}
 
 	CanListener* request() override;
@@ -197,14 +222,6 @@ public:
 
 	int init() override;
 	int config(uint32_t bus, uint32_t base, uint16_t period);
-
-#if 0
-	/* pin argument is pin number within gpio chip, not a global number */
-	int writePad(size_t pin, int value) override {
-		state[pin] = value;
-		return 0;
-	}
-#endif
 
 protected:
 	void decodeFrame(const CANRxFrame& frame, efitick_t nowNt) override;
@@ -214,6 +231,9 @@ private:
 	int setup();
 	int update();
 	void checkState();
+	uint32_t getTelemetryTimeoutMs() const {
+		return m_period * MSIOBOX_TIMEOUT_PERIODS;
+	}
 
 	/* PWM output helpers: convert frequency/duty into device on/off clock counts */
 	void CalcOnOffPeriod(int ch, pwm_settings &pwm);
@@ -271,7 +291,6 @@ MsIoBox::MsIoBox(uint32_t bus, uint32_t base, uint16_t period)
 /* GpioChip init hook, called once when the chip is registered. */
 int MsIoBox::init()
 {
-	/* TODO: register can listener here */
 	return 0;
 }
 
@@ -286,12 +305,28 @@ int MsIoBox::config(uint32_t bus, uint32_t base, uint16_t period)
 	m_base = base;
 	m_period = period;
 
+	/* Derive the tach/VSS-in enable mask from the tune. Inputs 0-3 (VSS1-4);
+	 * see the comment on MSIOBOX_INPUTS and readPad() for the bit layout. */
+	switch (engineConfiguration->msIoBox0.vss) {
+	case MsIoBoxVss::VR12:
+		InMode = BIT(0) | BIT(1);
+		break;
+	case MsIoBoxVss::HALL34:
+		InMode = BIT(2) | BIT(3);
+		break;
+	case MsIoBoxVss::ALL1234:
+		InMode = BIT(0) | BIT(1) | BIT(2) | BIT(3);
+		break;
+	case MsIoBoxVss::OFF:
+	default:
+		InMode = 0;
+		break;
+	}
+	needUpdateConfig = true;
+
 	/* Force init */
 	state = MSIOBOX_WAIT_INIT;
 	stateTimer.reset();
-
-	/* TODO: */
-	//registerCanListener(this);
 
 	return 0;
 }
@@ -299,8 +334,9 @@ int MsIoBox::config(uint32_t bus, uint32_t base, uint16_t period)
 /* Filter: decide whether an incoming CAN frame belongs to this device.
  * Only the frames the IOBox emits (base + 8 .. base + 14) are accepted. */
 bool MsIoBox::acceptFrame(const size_t busIndex, const CANRxFrame& frame) const {
-	/* TODO: check busIndex! */
-	UNUSED(busIndex);
+	if (busIndex != m_bus) {
+		return false;
+	}
 
 	/* 11 bit only */
 	if (CAN_ISX(frame)) {
@@ -362,14 +398,15 @@ int MsIoBox::update() {
 
 	/* PWM1 .. PWM6 */
 	for (size_t i = 0; i < 3; i++) {
+		size_t channel = 2 * i;
+
 		/* sent only if PWMs is in use */
-		if ((OutMode & (BIT(i) | BIT(i + 1))) == 0)
+		if ((OutMode & (BIT(channel) | BIT(channel + 1))) == 0)
 			continue;
 
 		CanTxTyped<iobox_pwm> pwm(CanCategory::CAN_IOBOX, m_base + CAN_IOBOX_SET_PWM(i), false, 0);
-		for (size_t j = 0; j < 2; j++) {
-			CalcOnOffPeriod(i + j, pwm->ch[j]);
-		}
+		CalcOnOffPeriod(channel, pwm->ch[0]);
+		CalcOnOffPeriod(channel + 1, pwm->ch[1]);
 	}
 
 	/* PWM7 periods and on/off outputs bitfield - sent always */
@@ -498,7 +535,10 @@ int MsIoBox::setPadPWM(size_t pin, float frequency, float duty)
 	if (pin >= MSIOBOX_OUT_COUNT)
 		return -1;
 
-	/* TODO: validate frequency? Validate duty? */
+	if (frequency <= 0) {
+		return -1;
+	}
+	duty = clampF(0.0f, duty, 1.0f);
 
 	/* Just save values.
 	 * Do calculation in update() as at this point we may not receive
@@ -511,7 +551,7 @@ int MsIoBox::setPadPWM(size_t pin, float frequency, float duty)
 		needUpdateConfig = true;
 	}
 
-	/* TODO: chech if updated? */
+	/* TODO: check if updated? */
 	needUpdate = true;
 
 	return 0;
@@ -524,11 +564,24 @@ brain_pin_diag_e MsIoBox::getDiag(size_t pin)
 	if (pin >= MSIOBOX_SIGNALS)
 		return PIN_UNKNOWN;
 
-	if ((state == MSIOBOX_READY) && (!stateTimer.hasElapsedMs(m_period * 3)))
+	if ((state == MSIOBOX_READY) && (!stateTimer.hasElapsedMs(getTelemetryTimeoutMs())))
 		return PIN_OK;
 
 	/* find better state  */
 	return PIN_DRIVER_OFF;
+}
+
+/* AdcChip: return a cached analog sample */
+expected<AdcSample> MsIoBox::readAdc(size_t channel) {
+	if (channel >= MSIOBOX_ADC_IN_COUNT) {
+		return unexpected;
+	}
+
+	if (state != MSIOBOX_READY) {
+		return unexpected;
+	}
+
+	return AdcSample{AdcValue[channel], AdcValue[channel] * MSIOBOX_ADC_VREF / MSIOBOX_ADC_COUNTS};
 }
 
 /* Periodic state-machine tick, driven from request().
@@ -554,7 +607,7 @@ void MsIoBox::checkState(void)
 		}
 		break;
 	case MSIOBOX_READY:
-		if (stateTimer.hasElapsedMs(m_period * 3)) {
+		if (stateTimer.hasElapsedMs(getTelemetryTimeoutMs())) {
 			state = MSIOBOX_FAILED;
 			stateTimer.reset();
 		} else {
@@ -611,6 +664,10 @@ void initCanGpioMsiobox() {
 			if (ret < 0) {
 			  // no error handling, not returning error code
 				return;
+			}
+
+			if (!adcchipRegister(MSIOBOX_ADC_BASE, instance[i], Gpio::CAN_PIN_0, MSIOBOX_ADC_IN_COUNT)) {
+				efiPrintf("MsIoBox: failed to register ADC channels");
 			}
 		}
 	}

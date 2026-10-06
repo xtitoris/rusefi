@@ -79,5 +79,47 @@ pins:
     class: outputs
     ts_name: Ext Chip 0 IO 16
 
+  - pin: 17
+    id: EFI_ADC_40
+    class: analog_inputs
+    function: 0-5V analog input
+    ts_name: Ext Chip 0 ADC 1
+
+  - pin: 18
+    id: EFI_ADC_41
+    class: analog_inputs
+    function: 0-5V analog input
+    ts_name: Ext Chip 0 ADC 2
+
+  - pin: 19
+    id: EFI_ADC_42
+    class: analog_inputs
+    function: 0-5V analog input
+    ts_name: Ext Chip 0 ADC 3
+
+  - pin: 20
+    id: EFI_ADC_43
+    class: analog_inputs
+    function: 0-5V analog input
+    ts_name: Ext Chip 0 ADC 4
+
+  - pin: 21
+    id: EFI_ADC_44
+    class: analog_inputs
+    function: 0-5V analog input
+    ts_name: Ext Chip 0 ADC 5
+
+  - pin: 22
+    id: EFI_ADC_45
+    class: analog_inputs
+    function: 0-5V analog input
+    ts_name: Ext Chip 0 ADC 6
+
+  - pin: 23
+    id: EFI_ADC_46
+    class: analog_inputs
+    function: 0-5V analog input
+    ts_name: Ext Chip 0 ADC 7
+
 info:
   cid: iochip
